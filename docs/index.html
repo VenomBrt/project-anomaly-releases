@@ -40,6 +40,10 @@
         --blood-hot: #d01921;
         --blood-deep: #5b0a0e;
 
+        /* Fora de registro: a cópia vermelha de um lado e a clara do outro. */
+        --fringe-warm: rgb(208 25 33 / 62%);
+        --fringe-cold: rgb(242 242 240 / 58%);
+
         --paper: #e6e6e3;
 
         --font-display: 'Big Shoulders Display', system-ui, sans-serif;
@@ -127,6 +131,101 @@
         0%, 100% { opacity: 0.4; }
         50% { opacity: 1; }
       }
+
+      /*
+       * ── O quadro perdendo o registro ────────────────────────────────────
+       *
+       * O mesmo estrago do launcher (styles/faults.css): fatias que releem o
+       * que está atrás, invertem, desalinham e somem. A técnica é a fatia ser
+       * feita do conteúdo de verdade — `backdrop-filter` —, e não de uma barra
+       * de luz por cima.
+       *
+       * A camada entra e sai por `visibility`. Com `opacity` no pai, a fatia
+       * passa a ler o próprio pai vazio e desaparece: foi o que custou uma
+       * captura em branco no launcher.
+       */
+      .faults {
+        position: fixed;
+        inset: 0;
+        z-index: 8;
+        visibility: hidden;
+        pointer-events: none;
+      }
+
+      body:not([data-fault='none']) .faults {
+        visibility: visible;
+      }
+
+      .faults__band {
+        position: absolute;
+        inset-inline: -3%;
+        opacity: 0;
+        backdrop-filter: invert(1) contrast(1.2) saturate(0.25) brightness(0.58);
+        background-image:
+          linear-gradient(90deg, var(--fringe-warm), transparent 14%),
+          linear-gradient(270deg, var(--fringe-cold), transparent 14%);
+      }
+
+      body:not([data-fault='none']) .faults__band {
+        opacity: 1;
+      }
+
+      /* O dropout é o único que apaga em vez de desalinhar. */
+      body[data-fault='dropout'] .faults__band {
+        backdrop-filter: invert(1) brightness(1.55) contrast(0.85);
+      }
+
+      /* O rastreamento não inverte o preto: o aparelho entorta, a fita não. */
+      body[data-fault='tracking'] .faults__band {
+        backdrop-filter: invert(1) contrast(1.35) brightness(0.6);
+      }
+
+      /* O fio do cabeçote passando onde não devia. */
+      .faults__needle {
+        position: absolute;
+        inset-inline: 0;
+        opacity: 0;
+        height: 1px;
+        background: rgb(242 242 240 / 40%);
+        box-shadow: 0 0 10px rgb(242 242 240 / 18%);
+      }
+
+      body[data-fault='roll'] .faults__needle,
+      body[data-fault='collapse'] .faults__needle {
+        opacity: 1;
+        top: 0;
+        height: 26px;
+        background: linear-gradient(180deg, #030304, rgb(3 3 4 / 0%));
+        box-shadow: none;
+      }
+
+      body[data-fault='roll'][data-fault-variant='1'] .faults__needle {
+        top: auto;
+        bottom: 0;
+        background: linear-gradient(0deg, #030304, rgb(3 3 4 / 0%));
+      }
+
+      body[data-fault='roll'][data-fault-variant='2'] .faults__needle {
+        height: 12px;
+      }
+
+      body[data-fault='collapse'] .faults__needle {
+        height: 16px;
+      }
+
+      /*
+       * O quadro é a prancha. O que muda de uma família para outra é só o
+       * destinatário do deslocamento: aqui, `.sheet`.
+       */
+      body[data-fault='slice'] .sheet { transform: translate(2px, -1px); }
+      body[data-fault='hold'] .sheet { transform: translate(1px, 0); }
+      body[data-fault='roll'] .sheet { transform: translateY(26px); }
+      body[data-fault='roll'][data-fault-variant='1'] .sheet { transform: translateY(-22px); }
+      body[data-fault='roll'][data-fault-variant='2'] .sheet { transform: translateY(14px) translateX(-5px); }
+      body[data-fault='tracking'] .sheet { transform: skewX(-1.1deg) translateX(3px); }
+      body[data-fault='tracking'][data-fault-variant='1'] .sheet { transform: skewX(1.7deg) translateX(-5px); }
+      body[data-fault='tracking'][data-fault-variant='2'] .sheet { transform: skewX(-0.5deg) translateY(3px); }
+      body[data-fault='collapse'] .sheet { transform: scaleY(0.965) translateY(-4px); }
 
       /* ── A prancha ─────────────────────────────────────────────────────── */
       .sheet {
@@ -606,7 +705,15 @@
       }
     </style>
   </head>
-  <body>
+  <!-- `data-fault` é o estado da fita; o script troca sozinho. -->
+  <body data-fault="none">
+    <div class="faults" aria-hidden="true">
+      <span class="faults__band" data-band="0"></span>
+      <span class="faults__band" data-band="1"></span>
+      <span class="faults__band" data-band="2"></span>
+      <span class="faults__needle"></span>
+    </div>
+
     <div class="tube" aria-hidden="true">
       <div class="tube__grain"></div>
       <div class="tube__scan"></div>
@@ -761,6 +868,134 @@
           if (appimage) document.getElementById('weight-linux').textContent = mb(appimage.size)
         })
         .catch(() => {})
+
+      /*
+       * ── O estrago ─────────────────────────────────────────────────────
+       *
+       * A mesma cadência do launcher (machine/useMachineFaults.ts): o estrago é
+       * um piscar de 80 a 210 ms, com pausa longa e irregular entre um e outro.
+       * O silêncio é que carrega a tensão — é nele que alguém lê o que está na
+       * frente. Um estrago que fica é um bug; um que pisca é uma máquina velha.
+       *
+       * Nada aqui pede decisão: aparece, desalinha e volta.
+       */
+      const bands = [...document.querySelectorAll('.faults__band')]
+      const still = window.matchMedia('(prefers-reduced-motion: reduce)')
+
+      // Os pesos do launcher: fatia é o estrago de fundo; as famílias de
+      // defeito de aparelho (entortar, espremer) aparecem menos.
+      const FAMILIES = [
+        { kind: 'slice', weight: 30 },
+        { kind: 'dropout', weight: 17 },
+        { kind: 'hold', weight: 15 },
+        { kind: 'tracking', weight: 15 },
+        { kind: 'roll', weight: 13 },
+        { kind: 'collapse', weight: 10 }
+      ]
+      const TOTAL = FAMILIES.reduce((sum, family) => sum + family.weight, 0)
+
+      // Geometria em porcentagem do quadro: topo, altura e deslocamento lateral.
+      // `null` esconde a fatia — fatias estreitas de propósito: numa tela preta,
+      // uma faixa de 17% vira flash de lâmpada, não rasgadura.
+      const GEOMETRY = {
+        slice: [
+          [{ top: 11, height: 3.6, shift: -7 }, { top: 44, height: 2.4, shift: 10 }, { top: 73, height: 5, shift: -4 }],
+          [{ top: 27, height: 7, shift: 13 }, { top: 63, height: 2, shift: -15 }, null],
+          [{ top: 18, height: 2.2, shift: -12 }, { top: 41, height: 1.6, shift: 8 }, { top: 88, height: 3.2, shift: -9 }]
+        ],
+        hold: [
+          [{ top: 30, height: 10, shift: 8 }, { top: 60, height: 3, shift: -5 }, null],
+          [{ top: 52, height: 7, shift: -11 }, null, { top: 21, height: 2, shift: 6 }]
+        ],
+        dropout: [
+          [{ top: 18, height: 2.6, shift: 0 }, null, null],
+          [{ top: 52, height: 4, shift: 0 }, null, null],
+          [{ top: 9, height: 3.2, shift: 0 }, { top: 71, height: 2.2, shift: 0 }, null]
+        ],
+        tracking: [
+          [{ top: 21, height: 1.1, shift: 22 }, { top: 55, height: 0.8, shift: -26 }, null],
+          [{ top: 38, height: 0.7, shift: -31 }, { top: 88, height: 1.4, shift: 27 }, null],
+          [{ top: 66, height: 2.4, shift: 14 }, { top: 12, height: 0.6, shift: -18 }, null]
+        ],
+        roll: [
+          [null, { top: 97, height: 0.4, shift: 0 }, null],
+          [null, null, null],
+          [{ top: 91, height: 9, shift: -6 }, { top: 99.6, height: 0.4, shift: 0 }, null]
+        ],
+        collapse: [
+          [{ top: 2, height: 1.2, shift: 0 }, { top: 97, height: 0.8, shift: 0 }, null]
+        ]
+      }
+
+      const between = (min, max) => min + Math.random() * (max - min)
+      let timer = 0
+      let previous = 'none'
+
+      function paint(kind, variant) {
+        const layout = GEOMETRY[kind][variant % GEOMETRY[kind].length]
+        bands.forEach((band, index) => {
+          const spec = layout[index]
+          if (!spec) {
+            band.style.display = 'none'
+            return
+          }
+          band.style.display = 'block'
+          band.style.top = `${spec.top}%`
+          band.style.height = `${spec.height}%`
+          band.style.transform = spec.shift ? `translateX(${spec.shift}px)` : 'none'
+        })
+        document.body.dataset.fault = kind
+        document.body.dataset.faultVariant = String(variant)
+      }
+
+      function draw() {
+        let ticket = Math.random() * TOTAL
+        let kind = 'slice'
+        for (const family of FAMILIES) {
+          ticket -= family.weight
+          if (ticket <= 0) {
+            kind = family.kind
+            break
+          }
+        }
+        // Dois estragos iguais em sequência leem como um só que demorou.
+        if (kind === previous) kind = previous === 'slice' ? 'hold' : 'slice'
+        return kind
+      }
+
+      function step() {
+        const kind = draw()
+        const variant = Math.floor(Math.random() * GEOMETRY[kind].length)
+        previous = kind
+        // De vez em quando o contato demora a voltar: um piscar mais comprido.
+        const duration = Math.random() < 0.14 ? between(280, 380) : between(80, 210)
+        paint(kind, variant)
+
+        timer = window.setTimeout(() => {
+          document.body.dataset.fault = 'none'
+          // 26% de chance de vir um segundo estrago colado no primeiro.
+          const next = Math.random() < 0.26 ? between(24, 84) : between(900, 4600)
+          timer = window.setTimeout(step, next)
+        }, duration)
+      }
+
+      function start() {
+        window.clearTimeout(timer)
+        document.body.dataset.fault = 'none'
+        if (still.matches) return
+        timer = window.setTimeout(step, between(1400, 3200))
+      }
+
+      // Ferramenta de manutenção: `?fault=roll:2` prende um estrago na tela para
+      // conferir a geometria. Sem o parâmetro, nada muda.
+      const pinned = new URLSearchParams(window.location.search).get('fault')
+      if (pinned) {
+        const [kind, variant] = pinned.split(':')
+        if (GEOMETRY[kind]) paint(kind, Number(variant) || 0)
+      } else {
+        start()
+        still.addEventListener('change', start)
+      }
     </script>
   </body>
 </html>
